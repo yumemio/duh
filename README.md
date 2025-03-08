@@ -77,7 +77,7 @@ All options (except `-T`/`--timeout`) are passed to `du`.
 
 ## Why
 
-I'm tired of staring blankly at the screen while running `du` to find out which directory is gobbling up the disk space, manually hitting `Ctrl-C` when it outgrows my patience.
+I'm tired of staring blankly at the screen while running `du` to find out which directory is gobbling up the disk space, manually hitting <kbd>Ctrl</kbd>-<kbd>C</kbd> when it outgrows my patience.
 
 Duh.
 
