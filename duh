@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+#
+# duh: a wrapper around du with a per-target timeout.
+# Usage:
+#   duh [DU_OPTIONS] -T TIMEOUT [FILE]...
+#
+#   For each FILE, duh calls:
+#       timeout TIMEOUT du [DU_OPTIONS] FILE
+#   If timeout occurs (exit status 124), it prints:
+#       [timeout]    FILE
+#
+#   TIMEOUT is given in seconds.
+#   Any occurrence of -d or --max-depth causes an error.
+#   All options (except -T/--timeout) are passed to du.
+#
+# Options:
+#   --help       Show this help message and exit.
+
+# Show help message and exit.
+show_help() {
+    cat <<EOF
+Usage: duh [DU_OPTIONS] -T TIMEOUT [FILE]...
+
+A wrapper around du with a per-target timeout.
+
+For each FILE, duh calls:
+    timeout TIMEOUT du [DU_OPTIONS] FILE
+If timeout occurs (exit status 124), it prints:
+    [timeout]    FILE
+
+TIMEOUT is given in seconds.
+Any occurrence of -d or --max-depth causes an error.
+All options (except -T/--timeout) are passed to du.
+
+Options:
+  --help       Show this help message and exit.
+EOF
+    exit 0
+}
+
+# Print error and exit.
+error() {
+    echo "Error: $1" >&2
+    exit 1
+}
+
+TIMEOUT=""
+DU_ARGS=()
+FILES=()
+
+# Process command-line arguments.
+while [[ $# -gt 0 ]]; do
+    arg="$1"
+    case "$arg" in
+        --help)
+            show_help
+            ;;
+        # --timeout with =value, e.g. --timeout=10
+        --timeout=*)
+            TIMEOUT="${arg#--timeout=}"
+            ;;
+        --timeout)
+            shift
+            [[ -z "$1" ]] && error "Missing timeout value after --timeout"
+            TIMEOUT="$1"
+            ;;
+        # Disallow long option --max-depth (with or without =)
+        --max-depth* )
+            error "\"duh\" does not current support --max-depth"
+            ;;
+        # Pass through other long options verbatim.
+        --*)
+            DU_ARGS+=("$arg")
+            ;;
+        -*)
+            # Check for grouped short options.
+            # If the option contains 't', extract the timeout.
+            # If any letter is 'd', error out.
+            letters="${arg:1}"
+            new_opt="-"
+            i=0
+            while [ $i -lt ${#letters} ]; do
+                ch="${letters:$i:1}"
+                if [ "$ch" = "d" ]; then
+                    error "\"duh\" does not current support --max-depth"
+                elif [ "$ch" = "T" ]; then
+                    # If there are extra characters, that is the timeout value.
+                    if [ $((i+1)) -lt ${#letters} ]; then
+                        TIMEOUT="${letters:$((i+1))}"
+                        break
+                    else
+                        # Timeout value is in the next argument.
+                        shift
+                        [[ -z "$1" ]] && error "Missing timeout value after -T"
+                        TIMEOUT="$1"
+                        break
+                    fi
+                else
+                    new_opt+="$ch"
+                fi
+                i=$((i+1))
+            done
+            # If new_opt has more than just "-" then add it to du options.
+            if [ "$new_opt" != "-" ]; then
+                DU_ARGS+=("$new_opt")
+            fi
+            ;;
+        *)
+            # Anything not starting with '-' is considered a file argument.
+            FILES+=("$arg")
+            ;;
+    esac
+    shift
+done
+
+# Ensure timeout was specified.
+if [[ -z "$TIMEOUT" ]]; then
+    error "Timeout value not specified. Use -T or --timeout."
+fi
+
+# If no FILES given, default to current directory.
+if [ ${#FILES[@]} -eq 0 ]; then
+    FILES=(".")
+fi
+
+# Process each FILE: run du with the specified timeout.
+for file in "${FILES[@]}"; do
+    # Capture output and exit code.
+    output=$(timeout "${TIMEOUT}s" du "${DU_ARGS[@]}" "$file")
+    exitcode=$?
+    if [ $exitcode -eq 124 ]; then
+        printf "[timeout]\t%s\n" "$file"
+    else
+        echo "$output"
+    fi
+done
+
